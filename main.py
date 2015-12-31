@@ -1,3 +1,4 @@
+import csv
 import json
 from collections import namedtuple
 
@@ -71,6 +72,7 @@ def parse_costs(text):
     return costs
 
 
+# TODO: logics is complitely duplicated from costs parser, rethink
 def parse_incomes(text):
     soup = BeautifulSoup(text, "html.parser")
     data_blocks = soup.find_all("tr", DATA_CLASS)
@@ -90,6 +92,15 @@ def parse_incomes(text):
     return incomes
 
 
+def export_costs_to_csv(costs, csv_file="costs.csv"):
+    with open(csv_file, "w") as csv_f:
+        writer = csv.writer(csv_f)
+
+        for cost in costs:
+            writer.writerow([cost.title, cost.description, cost.category,
+                             cost.budget, cost.sum, cost.account, cost.date])
+
+
 def main():
     session = initialize_session()
     session = authorise_session(session)
@@ -98,7 +109,8 @@ def main():
 
     incomes_text = get_incomes_content(session)
     incomes = parse_incomes(incomes_text)
-    print(costs)
+
+    export_costs_to_csv(costs)
     print(incomes)
 
 
