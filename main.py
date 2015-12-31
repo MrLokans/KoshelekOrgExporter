@@ -2,13 +2,15 @@ import json
 from collections import namedtuple
 
 import requests
-import bs4
+from bs4 import BeautifulSoup
+
 
 BASE_URL = "https://koshelek.org"
 LOGIN_URL = BASE_URL + "/login"
 SESSION_COOKIE_NAME = "JSESSIONID"
-
 COSTS_URL = BASE_URL + "/costs"
+
+DATA_CLASS = "data_line"
 
 
 SETTINGS_FILE = "settings.json"
@@ -41,11 +43,31 @@ def get_costs_content(session):
     return r.text
 
 
+def parse_costs(text):
+    soup = BeautifulSoup(text, "html.parser")
+    data_blocks = soup.find_all("tr", DATA_CLASS)
+
+    costs = []
+    for block in data_blocks:
+        td_els = block.find_all("td")
+        # TODO: use a table to avoid code duplication
+        name = td_els[0].a.text
+        category = td_els[1].a.text
+        budget = td_els[2].a.text
+        money = td_els[3].a.text
+        account = td_els[4].a.text
+        date = td_els[5].a.text
+        costs.append(Cost(title=name, description="", category=category,
+                          budget=budget, sum=money, account=account, date=date))
+    return costs
+
+
 def main():
     session = initialize_session()
     session = authorise_session(session)
-    authorise_session()
     costs_text = get_costs_content(session)
+    costs = parse_costs(costs_text)
+    print(costs)
 
 
 if __name__ == '__main__':
