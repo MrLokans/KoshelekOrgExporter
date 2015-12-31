@@ -103,10 +103,8 @@ def get_incomes_content(session):
 def get_url_content(session, url, param_dict=None):
     if not param_dict:
         param_dict = {}
-    print("param dict: {}".format(param_dict))
     r = session.get(url, params=param_dict)
     assert r.status_code == 200
-    print(r.url)
     return r.text
 
 
