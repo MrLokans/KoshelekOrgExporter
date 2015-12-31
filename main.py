@@ -108,9 +108,15 @@ def get_url_content(session, url, param_dict=None):
     return r.text
 
 
+def is_exchange_row(tr_elem):
+    print("checking row")
+    tds = tr_elem.find_all("td")
+    return bool(tds[0].img)
+
+
 def parse_costs(text):
     soup = BeautifulSoup(text, "html.parser")
-    data_blocks = soup.find_all("tr", DATA_CLASS)
+    data_blocks = filter(lambda x: not is_exchange_row(x), soup.find_all("tr", DATA_CLASS))
 
     costs = []
     for block in data_blocks:
@@ -130,7 +136,7 @@ def parse_costs(text):
 # TODO: logics is complitely duplicated from costs parser, rethink
 def parse_incomes(text):
     soup = BeautifulSoup(text, "html.parser")
-    data_blocks = soup.find_all("tr", DATA_CLASS)
+    data_blocks = filter(lambda x: not is_exchange_row(x), soup.find_all("tr", DATA_CLASS))
 
     incomes = []
     for block in data_blocks:
