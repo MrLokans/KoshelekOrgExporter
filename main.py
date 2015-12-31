@@ -1,5 +1,8 @@
 import json
+from collections import namedtuple
+
 import requests
+import bs4
 
 BASE_URL = "https://koshelek.org"
 LOGIN_URL = BASE_URL + "/login"
@@ -10,6 +13,11 @@ COSTS_URL = BASE_URL + "/costs"
 
 SETTINGS_FILE = "settings.json"
 SETTINGS = json.load(open(SETTINGS_FILE))
+
+
+Cost = namedtuple("Cost", ["title", "description", "category", "budget", "sum", "account", "date"])
+Income = namedtuple("Income", ["title", "description", "category", "budget", "sum", "account", "date"])
+Account = namedtuple("Account", ["title", "description", "default_currency", "remnants"])
 
 
 def initialize_session():
