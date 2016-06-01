@@ -1,9 +1,13 @@
+# coding: utf8
+
 import csv
 import json
 import datetime
+import logging
 from collections import namedtuple
 from calendar import monthrange
 
+import regex
 import requests
 from bs4 import BeautifulSoup
 
@@ -21,14 +25,19 @@ CSV_DELIMETER = '|'
 SETTINGS_FILE = "settings.json"
 SETTINGS = json.load(open(SETTINGS_FILE))
 
-import regex
 
+logging.basicConfig(level=logging.INFO)
 
 RE_CURRENCY = regex.compile(r"(?P<currency>[\p{Alpha}$€]+)(?P<value>[\d ]+(\.|\,)\d{2})", regex.UNICODE)
 
-Cost = namedtuple("Cost", ["title", "description", "category", "budget", "sum", "account", "date"])
-Income = namedtuple("Income", ["title", "description", "category", "budget", "sum", "account", "date"])
-Account = namedtuple("Account", ["title", "description", "default_currency", "remnants"])
+Cost = namedtuple("Cost",
+                  ["title", "description", "category",
+                   "budget", "sum", "account", "date"])
+Income = namedtuple("Income",
+                    ["title", "description", "category",
+                     "budget", "sum", "account", "date"])
+Account = namedtuple("Account",
+                     ["title", "description", "default_currency", "remnants"])
 
 
 # TODO: add python2/3 compatibility layer
@@ -69,7 +78,7 @@ def get_costs_for_months(session, months):
     all_costs = []
     for diff_month_i in range(0, months):
         month, year = get_month_and_year_diff(cur_year, cur_month, diff_month_i)
-        print("Getting costs for {:02d}.{}".format(month, year))
+        logging.info("Getting costs for {:02d}.{}".format(month, year))
         costs = get_costs_content(session, year=year, month=month)
         all_costs.extend(parse_costs(costs))
     return all_costs
