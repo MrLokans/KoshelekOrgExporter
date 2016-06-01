@@ -21,6 +21,10 @@ CSV_DELIMETER = '|'
 SETTINGS_FILE = "settings.json"
 SETTINGS = json.load(open(SETTINGS_FILE))
 
+import regex
+
+
+RE_CURRENCY = regex.compile(r"(?P<currency>[\p{Alpha}$€]+)(?P<value>[\d ]+(\.|\,)\d{2})", regex.UNICODE)
 
 Cost = namedtuple("Cost", ["title", "description", "category", "budget", "sum", "account", "date"])
 Income = namedtuple("Income", ["title", "description", "category", "budget", "sum", "account", "date"])
@@ -40,7 +44,9 @@ def authorise_session(session):
     # need it to obtain session cookie
     session.get(BASE_URL)
 
-    session.post(LOGIN_URL, data={'user.login': SETTINGS['login'], 'user.password': SETTINGS['password'], 'saveUser': True})
+    session.post(LOGIN_URL, data={'user.login': SETTINGS['login'],
+                                  'user.password': SETTINGS['password'],
+                                  'saveUser': True})
     return session
 
 
@@ -109,7 +115,6 @@ def get_url_content(session, url, param_dict=None):
 
 
 def is_exchange_row(tr_elem):
-    print("checking row")
     tds = tr_elem.find_all("td")
     return bool(tds[0].img)
 
@@ -149,7 +154,8 @@ def parse_incomes(text):
         account = td_els[4].a.text
         date = td_els[5].a.text
         incomes.append(Income(title=name, description="", category=category,
-                              budget=budget, sum=money, account=account, date=date))
+                              budget=budget, sum=money,
+                              account=account, date=date))
     return incomes
 
 
@@ -157,10 +163,23 @@ def export_costs_to_csv(costs, csv_file="costs.csv"):
     # Description and title may contain commas
     with open(csv_file, "w") as csv_f:
         writer = csv.writer(csv_f, delimiter=CSV_DELIMETER)
+        writer.writerow(['Title', 'Description', 'Category', 'Budget', 'Currency', 'Sum', 'Account', 'Date'])
 
         for cost in costs:
+            sum_str = cost.sum.replace('\xa0', ' ')
+            cur, val = split_currency(sum_str)
+            val = val.replace(',', '.').replace(' ', '')
             writer.writerow([cost.title, cost.description, cost.category,
-                             cost.budget, cost.sum, cost.account, cost.date])
+                             cost.budget, cur, val, cost.account, cost.date])
+
+
+def split_currency(cur_str):
+    match = RE_CURRENCY.match(cur_str)
+    if not match:
+        raise ValueError("Incorrect currency str: {}".format(cur_str))
+    cur = match.groupdict()['currency']
+    value = match.groupdict()['value']
+    return cur, value
 
 
 def main():
