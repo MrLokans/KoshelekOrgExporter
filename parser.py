@@ -56,6 +56,7 @@ class KoshelekParser(object):
         self.username = username
         self.password = password
         self._logger = logging.getLogger("koshelek.parser")
+        self._exporter = exporter
         self._session = self._initialize_session()
         self._authorise_session()
 
@@ -164,6 +165,11 @@ class KoshelekParser(object):
         }
         self._session.post(self.LOGIN_URL, data=payload)
         return self._session
+
+    def export_to_file(self, spendings, filename, **kwargs):
+        if not self._exporter:
+            raise ValueError("No exporter set up to be used.")
+        self._exporter.export_to_file(spendings, filename, **kwargs)
 
     def get_url_content(self, url, param_dict=None):
         if not param_dict:
