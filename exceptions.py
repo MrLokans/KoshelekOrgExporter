@@ -1,0 +1,2 @@
+class SettingsValidationError(ValueError):
+    pass
