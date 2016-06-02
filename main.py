@@ -32,14 +32,18 @@ def validate_settings_dict(settings_dict):
 
 def parse_args():
     arg_parser = argparse.ArgumentParser(description='Parse costs and income data from koshelek.org.')
-    arg_parser.add_argument("--login",
+    arg_parser.add_argument("--login", "-l",
                             help="Login for www.koshelek.org account.",
                             type=str)
-    arg_parser.add_argument("--password",
+    arg_parser.add_argument("--password", "-p",
                             help="Password for www.koshelek.org account.",
                             type=str)
-    arg_parser.add_argument("--settings",
+    arg_parser.add_argument("--settings", "-s",
                             help="Path to JSON file with password and login.")
+    arg_parser.add_argument("--months", "-m",
+                            help="Number of month to parse data for from the current month.",
+                            default=0,
+                            type=int)
     args = arg_parser.parse_args()
     return args
 
@@ -70,8 +74,14 @@ def main():
     else:
         msg = "Either login/password should be specified or settings file."
         raise ValueError(msg)
-    all_costs = parser.get_costs_for_months(months=2)
-    parser.export_to_file(all_costs, "all_costs.csv", delimeter=CSV_DELIMETER)
+    all_costs = parser.get_operations_for_months(months=args.months,
+                                                 operation="cost")
+    all_incomes = parser.get_operations_for_months(months=args.months,
+                                                   operation="cost")
+    parser.export_to_file(all_costs, "all_costs.csv",
+                          delimeter=CSV_DELIMETER)
+    parser.export_to_file(all_incomes, "all_incomes.csv",
+                          delimeter=CSV_DELIMETER)
 
 if __name__ == '__main__':
     main()
