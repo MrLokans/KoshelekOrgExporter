@@ -9,6 +9,7 @@ import regex
 import requests
 from bs4 import BeautifulSoup
 
+logging.basicConfig(level=logging.INFO)
 
 RE_CURRENCY = regex.compile(r"(?P<currency>[\p{Alpha}$€]+)(?P<value>[\d ]+(\.|\,)\d{2})", regex.UNICODE)
 
