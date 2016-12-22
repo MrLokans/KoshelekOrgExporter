@@ -48,32 +48,45 @@ def parse_args():
     return args
 
 
+def read_settings(settings_file=SETTINGS_FILE):
+    if not os.path.exists(settings_file) \
+        or not os.path.isfile(settings_file):
+        raise SettingsValidationError("Incorrect settings path.")
+    settings = load_settings_from_file(settings_file)
+    validate_settings_dict(settings)
+    return settings
+
+
+def get_credentials(cli_args):
+    """
+    Reads login and password from the CLI args
+    """
+    login, password = "", ""
+
+    if cli_args.login and cli_args.password:
+        login, password = cli_args.login, cli_args.password
+    elif cli_args.settings:
+        settings = read_settings(cli_args.settings)
+        return settings["login"], settings["password"]
+    else:
+        settings = read_settings()
+        login, password = settings["login"], settings["password"]
+    return login, password
+
+
 def main():
     args = parse_args()
-    if args.login and args.password:
-        parser = KoshelekParser(username=args.login,
-                                password=args.password,
-                                exporter=CSVExporter())
-    elif args.settings:
-        assert os.path.exists(args.settings)
-        assert os.path.isfile(args.settings)
 
-        settings = load_settings_from_file(args.settings)
-        validate_settings_dict(settings)
+    login, password = get_credentials(args)
 
-        parser = KoshelekParser(username=settings["login"],
-                                password=settings["password"],
-                                exporter=CSVExporter())
-    elif os.path.exists(SETTINGS_FILE) and os.path.isfile(SETTINGS_FILE):
-        settings = load_settings_from_file(SETTINGS_FILE)
-        validate_settings_dict(settings)
-
-        parser = KoshelekParser(username=settings["login"],
-                                password=settings["password"],
-                                exporter=CSVExporter())
-    else:
+    if not login or not password:
         msg = "Either login/password should be specified or settings file."
         raise ValueError(msg)
+
+    parser = KoshelekParser(username=login,
+                            password=password,
+                            exporter=CSVExporter())
+
     all_costs = parser.get_operations_for_months(months=args.months,
                                                  operation="cost")
     all_incomes = parser.get_operations_for_months(months=args.months,
@@ -82,6 +95,7 @@ def main():
                           delimeter=CSV_DELIMETER)
     parser.export_to_file(all_incomes, "all_incomes.csv",
                           delimeter=CSV_DELIMETER)
+
 
 if __name__ == '__main__':
     main()
