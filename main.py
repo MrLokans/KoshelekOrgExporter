@@ -4,6 +4,8 @@ import os
 import json
 import argparse
 
+from typing import Tuple
+
 from exceptions import SettingsValidationError
 from parser import KoshelekParser
 from exporters import CSVExporter
@@ -52,7 +54,7 @@ def parse_args():
     return args
 
 
-def read_settings(settings_file=SETTINGS_FILE):
+def read_settings(settings_file: str=SETTINGS_FILE):
     if not os.path.exists(settings_file) \
         or not os.path.isfile(settings_file):
         raise SettingsValidationError("Incorrect settings path.")
@@ -61,7 +63,7 @@ def read_settings(settings_file=SETTINGS_FILE):
     return settings
 
 
-def get_credentials(cli_args):
+def get_credentials(cli_args) -> Tuple[str, str]:
     """
     Reads login and password from the CLI args
     """
