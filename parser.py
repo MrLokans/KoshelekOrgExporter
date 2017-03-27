@@ -85,8 +85,7 @@ class KoshelekParser(object):
         return data_blocks
 
     @staticmethod
-    def __spending_from_data_block(self,
-                                   data_block,
+    def __spending_from_data_block(data_block: BeautifulSoup=None,
                                    spending_class=Income):
         td_els = data_block.find_all("td")
         title = td_els[0].a.text
@@ -112,7 +111,7 @@ class KoshelekParser(object):
         data_blocks = self.__get_data_blocks(soup)
         func = partial(self.__spending_from_data_block,
                        spending_class=operation_class)
-        costs = [func(b) for b in data_blocks]
+        costs = [func(data_block=b) for b in data_blocks]
         return list(costs)
 
     def get_operations_content(self, year="", month="", operation="cost"):
@@ -184,7 +183,7 @@ class KoshelekParser(object):
         credentials and save the authorisation
         cookie into the local session.
         """
-        self._session.get(self.BASE_URL)
+        self._session.get(self.BASE_URL, verify=False)
         payload = {
             'user.login': self.username,
             'user.password': self.password,
