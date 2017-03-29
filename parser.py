@@ -16,6 +16,8 @@ from exporters import CSVExporter
 
 logging.basicConfig(level=logging.INFO)
 
+URL_PART_BEFORE_ID = '2edit_ajax'
+
 BASE_URL = "https://koshelek.org"
 RE_CURRENCY = regex.compile(r"(?P<currency>[\p{Alpha}$€]+)(?P<value>[\d ]+(\.|\,)\d{2})", regex.UNICODE)
 RE_AJAX_ARGS_URL = re.compile(r'showAjaxWindow\(\"(?P<ajax_url>.+?)\"')
@@ -80,6 +82,9 @@ class IncomeParseStrategy(object):
     @staticmethod
     def parse(session, block):
         td_els = _extract_td_elements(block)
+        ajax_url = _extract_ajax_url(block)
+        # FIXME: moved to base class
+        _id = IncomeParseStrategy._extract_id_from_url(ajax_url)
         title = td_els[0].a.text
         category = td_els[1].a.text
         budget = td_els[2].a.text
@@ -87,9 +92,15 @@ class IncomeParseStrategy(object):
         cur, value = split_currency(money)
         account = td_els[4].a.text
         date = td_els[5].a.text
-        return Income(title=title, description="", category=category,
+        return Income(id=_id, title=title, description="", category=category,
                       budget=budget, currency=cur, value=value,
                       account=account, date=date)
+
+    @staticmethod
+    def _extract_id_from_url(ajax_url):
+        # FIXME: process ?return_url
+        indx = ajax_url.find(URL_PART_BEFORE_ID) + len(URL_PART_BEFORE_ID)
+        return ajax_url[indx:]
 
 
 class CostParseStrategy(object):
@@ -98,28 +109,60 @@ class CostParseStrategy(object):
     def parse(session, block):
         td_els = _extract_td_elements(block)
         title = td_els[0].a.text
+        ajax_url = _extract_ajax_url(block)
+        _id = IncomeParseStrategy._extract_id_from_url(ajax_url)
         category = td_els[1].a.text
         budget = td_els[2].a.text
         money = td_els[3].a.text
         cur, value = split_currency(money)
         account = td_els[4].a.text
         date = td_els[5].a.text
-        return Cost(id=1, title=title, description="", category=category,
+        return Cost(id=_id, title=title, description="", category=category,
                     budget=budget, currency=cur, value=value,
                     account=account, date=date)
+
+    @staticmethod
+    def _extract_id_from_url(ajax_url):
+        indx = ajax_url.find(URL_PART_BEFORE_ID) + len(URL_PART_BEFORE_ID)
+        return ajax_url[indx:]
 
 
 class ExchangeParseStrategy(object):
 
     @classmethod
     def parse(cls, session, block):
+        td_els = _extract_td_elements(block)
+        title = td_els[0].a.text
         ajax_url = _extract_ajax_url(block)
-        return cls._parse_editorial_form(session, ajax_url)
+        _id = IncomeParseStrategy._extract_id_from_url(ajax_url)
+        account_from, account_to = cls._parse_editorial_form(session, ajax_url)
+        budget = td_els[2].a.text
+        money = td_els[3].a.text
+        cur, value = split_currency(money)
+        date = td_els[5].a.text
+        # FIXME: fix description
+        return Exchange(id=_id, title=title,
+                        budget=budget, currency=cur, description='',
+                        account_from=account_from, account_to=account_to,
+                        value=value,
+                        date=date)
 
     @staticmethod
     def _parse_editorial_form(session, ajax_url):
         response = session.get(BASE_URL + ajax_url)
-        # FIXME: add parsing logics
+        soup = BeautifulSoup(response.text)
+
+        account_from = soup\
+            .find('select', id='accountFrom')\
+            .find('option', selected='selected')\
+            .text
+
+        account_to = soup\
+            .find('select', id='accountTo')\
+            .find('option', selected='selected')\
+            .text
+
+        return account_to, account_from
 
 
 class BlockParser(object):
@@ -226,6 +269,9 @@ class KoshelekParser(object):
         operations = Queue()
         self._get_blocks_for_months(now, months, blocks)
         self._parse_blocks(blocks, operations)
+        while not operations.empty():
+            op = operations.get()
+            print(op)
         return operations
 
     def _parse_blocks(self,
