@@ -46,10 +46,9 @@ def parse_args():
                             help="Number of month to parse data for from the current month.",
                             default=0,
                             type=int)
-    arg_parser.add_argument('--type', '-t',
-                            help="Type of operations to log (spend/cost)",
-                            default=None,
-                            choices=['income', 'cost'])
+    arg_parser.add_argument('--threads', '-t',
+                            help='Number of threads to use.',
+                            default=2, type=int)
     args = arg_parser.parse_args()
     return args
 
@@ -91,23 +90,17 @@ def main():
 
     parser = KoshelekParser(username=login,
                             password=password,
-                            exporter=CSVExporter())
+                            exporter=CSVExporter(),
+                            threads=args.threads)
 
-    if args.type:
-        all_ops = parser.get_operations_for_months(months=args.months,
-                                                   operation=args.type)
-        parser.export_to_file(all_ops, "all_{}s.csv".format(args.type),
-                              delimeter=CSV_DELIMETER)
-    else:
-        all_incomes = parser.get_operations_for_months(months=args.months,
-                                                       operation="income")
-        all_costs = parser.get_operations_for_months(months=args.months,
-                                                       operation="cost")
+    all_operations = parser.get_operations_for_months(months=args.months)
 
-        parser.export_to_file(all_costs, "all_costs.csv",
-                              delimeter=CSV_DELIMETER)
-        parser.export_to_file(all_incomes, "all_incomes.csv",
-                              delimeter=CSV_DELIMETER)
+    for op in all_operations:
+        print(op)
+    # parser.export_to_file(all_costs, "all_costs.csv",
+    #                       delimeter=CSV_DELIMETER)
+    # parser.export_to_file(all_incomes, "all_incomes.csv",
+    #                       delimeter=CSV_DELIMETER)
 
 
 if __name__ == '__main__':

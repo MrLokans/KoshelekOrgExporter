@@ -4,17 +4,23 @@ import logging
 
 from calendar import monthrange
 from collections import namedtuple
+from concurrent import futures
 from typing import List, Tuple, Union
 from queue import Queue
 
 import regex
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
 
 from bs4 import BeautifulSoup
 
 from exporters import CSVExporter
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('koshelek.parser')
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
 
 URL_PART_BEFORE_ID = '2edit_ajax'
 
@@ -98,9 +104,12 @@ class IncomeParseStrategy(object):
 
     @staticmethod
     def _extract_id_from_url(ajax_url):
-        # FIXME: process ?return_url
         indx = ajax_url.find(URL_PART_BEFORE_ID) + len(URL_PART_BEFORE_ID)
-        return ajax_url[indx:]
+        ajax_url = ajax_url[indx:]
+        return_url_pos = ajax_url.find('?return_url')
+        if return_url_pos:
+            ajax_url = ajax_url[:return_url_pos]
+        return ajax_url
 
 
 class CostParseStrategy(object):
@@ -202,7 +211,8 @@ class KoshelekParser(object):
     def __init__(self,
                  username: str="",
                  password: str="",
-                 exporter=None) -> None:
+                 exporter=None,
+                 threads=2) -> None:
         if not (username and password):
             msg = "Password or username is empty."
             raise IncorrectCredentials(msg)
@@ -212,6 +222,7 @@ class KoshelekParser(object):
         self._exporter = exporter or CSVExporter()
         self._session = self._initialize_session()
         self._block_parser = BlockParser(self._session)
+        self._number_of_threads = threads
         self._authorise_session()
 
     def _extract_operation_blocks_from_page(self,
@@ -227,6 +238,8 @@ class KoshelekParser(object):
         if not (year or month):
             year = datetime.datetime.now().year
             month = datetime.datetime.now().month
+        logger.info("Getting {op} for {month}.{year}"
+                    .format(op=operation, month=month, year=year))
         operation_type_url = self.URLS.get(operation, COST_NAME)
         date_filter = self.get_date_filter_dict_for_month(month, year)
         return self.get_url_content(operation_type_url,
@@ -271,8 +284,7 @@ class KoshelekParser(object):
         self._parse_blocks(blocks, operations)
         while not operations.empty():
             op = operations.get()
-            print(op)
-        return operations
+            yield op
 
     def _parse_blocks(self,
                       blocks: Queue,
@@ -282,15 +294,21 @@ class KoshelekParser(object):
             operations.put(self._block_parser.parse_block(block_to_parse))
 
     def _get_blocks_for_months(self, now, months, queue):
-        for month, year in self.__month_year_iterator(now, months):
-            self._logger.info("Getting costs for {:02d}.{}"
-                              .format(month, year))
-            for operation in [COST_NAME, INCOME_NAME]:
-                costs_page = self.get_operations_content(year=year,
-                                                         month=month,
-                                                         operation=operation)
-                for block in self._extract_operation_blocks_from_page(costs_page):
-                    queue.put(block)
+        # TODO: threads should better be used while processing
+        # specific blocks
+        with futures.ThreadPoolExecutor(max_workers=self._number_of_threads) as executor:
+            futures_ = (executor.submit(self.get_operations_content,
+                                        year, month, operation)
+                        for (month, year) in self.__month_year_iterator(now, months)
+                        for operation in (COST_NAME, INCOME_NAME))
+            executor.submit(futures_)
+            for future in futures.as_completed(futures_):
+                try:
+                    costs_page = future.result()
+                    for block in self._extract_operation_blocks_from_page(costs_page):
+                        queue.put(block)
+                except Exception as e:
+                    logger.exception("Unknown error occured while parsing the page.")
 
     def __month_year_iterator(self, now: datetime.datetime=None,
                               months: int=1):
@@ -340,6 +358,6 @@ class KoshelekParser(object):
         Reads URL content
         """
         param_dict = param_dict or {}
-        r = self._session.get(url, params=param_dict)
+        r = self._session.get(url, params=param_dict, verify=False)
         assert r.status_code == HTTP_OK
         return r.text
