@@ -93,14 +93,12 @@ def main():
                             exporter=CSVExporter(),
                             threads=args.threads)
 
-    all_operations = parser.get_operations_for_months(months=args.months)
+    costs, incomes, exchanges = parser.get_operations_for_months(months=args.months)
 
-    for op in all_operations:
-        print(op)
-    # parser.export_to_file(all_costs, "all_costs.csv",
-    #                       delimeter=CSV_DELIMETER)
-    # parser.export_to_file(all_incomes, "all_incomes.csv",
-    #                       delimeter=CSV_DELIMETER)
+    parser.export_to_file(costs, "all_costs.csv",
+                          delimeter=CSV_DELIMETER)
+    parser.export_to_file(incomes, "all_incomes.csv",
+                          delimeter=CSV_DELIMETER)
 
 
 if __name__ == '__main__':

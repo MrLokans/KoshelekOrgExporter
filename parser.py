@@ -24,6 +24,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 URL_PART_BEFORE_ID = '2edit_ajax'
 
+DEFAULT_PARSER = 'lxml'
 BASE_URL = "https://koshelek.org"
 RE_CURRENCY = regex.compile(r"(?P<currency>[\p{Alpha}$€]+)(?P<value>[\d ]+(\.|\,)\d{2})", regex.UNICODE)
 RE_AJAX_ARGS_URL = re.compile(r'showAjaxWindow\(\"(?P<ajax_url>.+?)\"')
@@ -159,7 +160,7 @@ class ExchangeParseStrategy(object):
     @staticmethod
     def _parse_editorial_form(session, ajax_url):
         response = session.get(BASE_URL + ajax_url)
-        soup = BeautifulSoup(response.text)
+        soup = BeautifulSoup(response.text, DEFAULT_PARSER)
 
         account_from = soup\
             .find('select', id='accountFrom')\
@@ -227,7 +228,7 @@ class KoshelekParser(object):
 
     def _extract_operation_blocks_from_page(self,
                                             page_text: str) -> List[BeautifulSoup]:
-        soup = BeautifulSoup(page_text, "html.parser")
+        soup = BeautifulSoup(page_text, DEFAULT_PARSER)
         return soup.find_all("tr", self.DATA_CLASS)
 
     def get_operations_content(self, year="", month="", operation=COST_NAME):
@@ -282,9 +283,22 @@ class KoshelekParser(object):
         operations = Queue()
         self._get_blocks_for_months(now, months, blocks)
         self._parse_blocks(blocks, operations)
+
+        costs = []
+        incomes = []
+        exchanges = []
         while not operations.empty():
             op = operations.get()
-            yield op
+            if isinstance(op, Income):
+                incomes.append(op)
+            elif isinstance(op, Cost):
+                costs.append(op)
+            elif isinstance(op, Exchange):
+                exchanges.append(op)
+            else:
+                logger.warn("Unknown operation type: %s (%s)",
+                            op, type(op))
+        return costs, incomes, exchanges
 
     def _parse_blocks(self,
                       blocks: Queue,
