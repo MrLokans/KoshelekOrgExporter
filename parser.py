@@ -1,12 +1,13 @@
 import re
 import datetime
 import logging
+import threading
 
 from calendar import monthrange
 from collections import namedtuple
-from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Union
-from queue import Queue
+from queue import Queue, Empty
 
 import regex
 import requests
@@ -19,6 +20,9 @@ from exporters import CSVExporter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('koshelek.parser')
+logging\
+    .getLogger('requests.packages.urllib3.connectionpool')\
+    .setLevel(logging.WARNING)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
@@ -159,7 +163,7 @@ class ExchangeParseStrategy(object):
 
     @staticmethod
     def _parse_editorial_form(session, ajax_url):
-        response = session.get(BASE_URL + ajax_url)
+        response = session.get(BASE_URL + ajax_url, verify=False)
         soup = BeautifulSoup(response.text, DEFAULT_PARSER)
 
         account_from = soup\
@@ -224,6 +228,11 @@ class KoshelekParser(object):
         self._session = self._initialize_session()
         self._block_parser = BlockParser(self._session)
         self._number_of_threads = threads
+
+        self.producer_pool = ThreadPoolExecutor(max_workers=self._number_of_threads,
+                                                thread_name_prefix='producer-')
+        self.consumer_pool = ThreadPoolExecutor(max_workers=self._number_of_threads,
+                                                thread_name_prefix='consumer-')
         self._authorise_session()
 
     def _extract_operation_blocks_from_page(self,
@@ -281,9 +290,22 @@ class KoshelekParser(object):
 
         blocks = Queue()
         operations = Queue()
-        self._get_blocks_for_months(now, months, blocks)
-        self._parse_blocks(blocks, operations)
+        blocks_obtained = threading.Event()
 
+        producer = threading.Thread(target=self._get_blocks_for_months,
+                                    args=(now, months, blocks, blocks_obtained))
+        consumer = threading.Thread(target=self._parse_blocks,
+                                    args=(blocks, operations, blocks_obtained))
+
+        producer.start()
+        consumer.start()
+
+        producer.join()
+        consumer.join()
+
+        return self._extract_operations_from_queue(operations)
+
+    def _extract_operations_from_queue(self, operations):
         costs = []
         incomes = []
         exchanges = []
@@ -300,29 +322,46 @@ class KoshelekParser(object):
                             op, type(op))
         return costs, incomes, exchanges
 
-    def _parse_blocks(self,
-                      blocks: Queue,
-                      operations: Queue):
-        while not blocks.empty():
-            block_to_parse = blocks.get()
-            operations.put(self._block_parser.parse_block(block_to_parse))
-
-    def _get_blocks_for_months(self, now, months, queue):
+    def _get_blocks_for_months(self, now, months, queue,
+                               blocks_obtained: threading.Event):
         # TODO: threads should better be used while processing
         # specific blocks
-        with futures.ThreadPoolExecutor(max_workers=self._number_of_threads) as executor:
-            futures_ = (executor.submit(self.get_operations_content,
-                                        year, month, operation)
-                        for (month, year) in self.__month_year_iterator(now, months)
-                        for operation in (COST_NAME, INCOME_NAME))
-            executor.submit(futures_)
-            for future in futures.as_completed(futures_):
-                try:
-                    costs_page = future.result()
-                    for block in self._extract_operation_blocks_from_page(costs_page):
-                        queue.put(block)
-                except Exception as e:
-                    logger.exception("Unknown error occured while parsing the page.")
+        futures_ = (self.producer_pool.submit(self.get_operations_content, year, month, operation)
+                    for (month, year) in self.__month_year_iterator(now, months)
+                    for operation in (COST_NAME, INCOME_NAME))
+        self.producer_pool.submit(futures_)
+        for future in as_completed(futures_):
+            try:
+                costs_page = future.result()
+                for block in self._extract_operation_blocks_from_page(costs_page):
+                    queue.put(block)
+            except Exception as e:
+                logger.exception("Unknown error occured while parsing the page.")
+        logger.info("Block obtaining finished.")
+        blocks_obtained.set()
+
+    def _parse_blocks(self,
+                      blocks: Queue,
+                      operations: Queue,
+                      blocks_obtained: threading.Event):
+        future_results = []
+        while True:
+            if blocks_obtained.is_set() and blocks.empty():
+                break
+            try:
+                if not blocks.empty():
+                    block_to_parse = blocks.get(timeout=10)
+                    future = self.consumer_pool.submit(self._block_parser.parse_block,
+                                                       block_to_parse)
+                    future_results.append(future)
+            except Empty:
+                break
+        for future in as_completed(future_results):
+            try:
+                operations.put(future.result())
+            except Exception as e:
+                logger.exception("Error parsing the operation.")
+        logger.info("Operations parsing completed.")
 
     def __month_year_iterator(self, now: datetime.datetime=None,
                               months: int=1):
