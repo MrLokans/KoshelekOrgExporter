@@ -1,12 +1,10 @@
 import datetime
 import logging
-import threading
 
 from calendar import monthrange
-from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Union
-from queue import Queue, Empty
+from typing import Iterator, List, Tuple
+from queue import Queue
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -65,7 +63,7 @@ class KoshelekParser(object):
                  username: str="",
                  password: str="",
                  exporter=None,
-                 threads=2) -> None:
+                 threads=3) -> None:
         if not (username and password):
             msg = "Password or username is empty."
             raise IncorrectCredentials(msg)
@@ -88,14 +86,17 @@ class KoshelekParser(object):
         soup = BeautifulSoup(page_text, constants.DEFAULT_PARSER)
         return soup.find_all("tr", self.DATA_CLASS)
 
-    def get_operations_content(self, year="", month="", operation=constants.COST_NAME):
+    def get_operations_content(self, year="", month="",
+                               operation: str=constants.COST_NAME,
+                               now: datetime.datetime=None):
+        now = now or datetime.datetime.now()
         if month and not year:
-            year = datetime.datetime.now().year
+            year = now.year
         if not month and year:
-            month = datetime.datetime.now().month
+            month = now.month
         if not (year or month):
-            year = datetime.datetime.now().year
-            month = datetime.datetime.now().month
+            year = now.year
+            month = now.month
         logger.info("Getting {op} for {month}.{year}"
                     .format(op=operation, month=month, year=year))
         operation_type_url = self.URLS.get(operation, constants.COST_NAME)
@@ -103,7 +104,10 @@ class KoshelekParser(object):
         return self.get_url_content(operation_type_url,
                                     param_dict=date_filter)
 
-    def _get_month_and_year_diff(self, cur_year, cur_month, month_count):
+    def _get_month_and_year_diff(self,
+                                 cur_year: int,
+                                 cur_month: int,
+                                 month_count: int) -> Tuple[int, int]:
         month_diff = cur_month - month_count
         year = cur_year
         month = month_diff
@@ -136,24 +140,14 @@ class KoshelekParser(object):
         """
         now = now or datetime.datetime.now()
 
-        blocks = Queue()
-        operations = Queue()
-        blocks_obtained = threading.Event()
+        blocks_queue = Queue()
+        operations_queue = Queue()
 
-        producer = threading.Thread(target=self._get_blocks_for_months,
-                                    args=(now, months, blocks, blocks_obtained))
-        consumer = threading.Thread(target=self._parse_blocks,
-                                    args=(blocks, operations, blocks_obtained))
+        self._get_blocks_for_months(now, months, blocks_queue)
+        self._parse_blocks(blocks_queue, operations_queue)
+        return self._extract_operations_from_queue(operations_queue)
 
-        producer.start()
-        consumer.start()
-
-        producer.join()
-        consumer.join()
-
-        return self._extract_operations_from_queue(operations)
-
-    def _extract_operations_from_queue(self, operations):
+    def _extract_operations_from_queue(self, operations: Queue):
         costs, incomes, exchanges = [], [], []
         while not operations.empty():
             op = operations.get()
@@ -166,16 +160,20 @@ class KoshelekParser(object):
             else:
                 logger.warn("Unknown operation type: %s (%s)",
                             op, type(op))
+        logger.info('Operations extraction completed.')
         return costs, incomes, exchanges
 
-    def _get_blocks_for_months(self, now, months, queue,
-                               blocks_obtained: threading.Event):
-        # TODO: threads should better be used while processing
-        # specific blocks
-        futures_ = (self.producer_pool.submit(self.get_operations_content, year, month, operation)
-                    for (month, year) in self.__month_year_iterator(now, months)
-                    for operation in (constants.COST_NAME, constants.INCOME_NAME))
-        self.producer_pool.submit(futures_)
+    def _get_blocks_for_months(self,
+                               now: datetime.datetime,
+                               months: int,
+                               queue: Queue):
+        thread_args = ((year, month, operation)
+                       for (month, year) in self.__month_year_iterator(now, months)
+                       for operation in (constants.COST_NAME, constants.INCOME_NAME))
+
+        futures_ = (self.producer_pool.submit(self.get_operations_content, *args)
+                    for args in thread_args)
+
         for future in as_completed(futures_):
             try:
                 costs_page = future.result()
@@ -183,34 +181,29 @@ class KoshelekParser(object):
                     queue.put(block)
             except Exception as e:
                 logger.exception("Unknown error occured while parsing the page.")
-        logger.info("Block obtaining finished.")
-        blocks_obtained.set()
+        logger.info("Blocks obtaining finished.")
 
     def _parse_blocks(self,
                       blocks: Queue,
-                      operations: Queue,
-                      blocks_obtained: threading.Event):
+                      operations: Queue):
         future_results = []
-        while True:
-            if blocks_obtained.is_set() and blocks.empty():
-                break
-            try:
-                if not blocks.empty():
-                    block_to_parse = blocks.get(timeout=10)
-                    future = self.consumer_pool.submit(self._block_parser.parse_block,
-                                                       block_to_parse)
-                    future_results.append(future)
-            except Empty:
-                break
+        logger.info('Block parsing started.')
+        while not blocks.empty():
+            block_to_parse = blocks.get(timeout=10)
+            future = self.consumer_pool.submit(self._block_parser.parse_block,
+                                               block_to_parse)
+            future_results.append(future)
         for future in as_completed(future_results):
             try:
                 operations.put(future.result())
             except Exception as e:
                 logger.exception("Error parsing the operation.")
-        logger.info("Operations parsing completed.")
+        logger.info("Block parsing completed.")
 
-    def __month_year_iterator(self, now: datetime.datetime=None,
-                              months: int=1):
+    def __month_year_iterator(self,
+                              now: datetime.datetime=None,
+                              months: int=1) -> Iterator[Tuple[int, int]]:
+        now = now or datetime.datetime.now()
         cur_month = now.month
         cur_year = now.year
 
@@ -257,5 +250,5 @@ class KoshelekParser(object):
         """
         param_dict = param_dict or {}
         r = self._session.get(url, params=param_dict, verify=False)
-        assert r.status_code == constants.HTTP_OK
+        assert r.ok
         return r.text
