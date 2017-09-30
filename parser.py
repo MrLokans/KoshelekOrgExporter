@@ -55,6 +55,7 @@ class KoshelekParser(object):
         "login": constants.BASE_URL + "/login",
         "income": constants.BASE_URL + "/income",
         "cost": constants.BASE_URL + "/costs",
+        "accounts": constants.BASE_URL + "/accounts",
     }
 
     DATA_CLASS = "data_line"
@@ -85,6 +86,13 @@ class KoshelekParser(object):
                                             page_text: str) -> List[BeautifulSoup]:
         soup = BeautifulSoup(page_text, constants.DEFAULT_PARSER)
         return soup.find_all("tr", self.DATA_CLASS)
+
+    def get_accounts(self) -> ops.Account:
+        url = self.URLS['accounts']
+        resp = self._session.get(url)
+        blocks = BeautifulSoup(resp.text).find_all('div', {'class': 'grid_block'})
+        parser = strategies.AccountParser(self._session)
+        return [parser.parse(b) for b in blocks]
 
     def get_operations_content(self, year="", month="",
                                operation: str=constants.COST_NAME,

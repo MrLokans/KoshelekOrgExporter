@@ -12,7 +12,8 @@ Exchange = namedtuple("Exchange",
                       ["id", "title", "description", "budget", "currency",
                        "value", "account_from", "account_to", "date"])
 Account = namedtuple("Account",
-                     ["title", "description", "default_currency", "remnants"])
-
+                     ["id", "title", "remnants"])
+Balance = namedtuple("Balance",
+                     ["currency", "value"])
 
 Operations = List[Union[Income, Cost]]

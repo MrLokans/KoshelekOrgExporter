@@ -11,7 +11,7 @@ from parser import KoshelekParser
 from exporters import CSVExporter
 
 
-CSV_DELIMETER = '|'
+CSV_DELIMETER = ','
 
 SETTINGS_FILE = "settings.json"
 SETTINGS = json.load(open(SETTINGS_FILE))
@@ -93,11 +93,14 @@ def main():
                             exporter=CSVExporter(),
                             threads=args.threads)
 
+    accounts = parser.get_accounts()
     costs, incomes, exchanges = parser.get_operations_for_months(months=args.months)
 
     parser.export_to_file(costs, "all_costs.csv",
                           delimeter=CSV_DELIMETER)
     parser.export_to_file(incomes, "all_incomes.csv",
+                          delimeter=CSV_DELIMETER)
+    parser.export_to_file(accounts, "all_accounts.csv",
                           delimeter=CSV_DELIMETER)
 
 
